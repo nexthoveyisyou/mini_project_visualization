@@ -478,6 +478,55 @@ with tab1:
     st.plotly_chart(fig_heat, use_container_width=True)
     tip("🟢 초록(양수) = 해당 섹터에서 국민연금 매수 판단이 KOSPI를 앞섰습니다. 🔴 빨간(음수) = 시장 평균에 못 미쳤습니다. 초록이 진할수록 국민연금의 투자 판단력이 빛난 섹터입니다.")
 
+    # ── 3-D 섹터별 보유 종목 & 지분율 ────────────────────────
+    st.markdown("#### 섹터별 보유 종목 수 & 평균 지분율")
+    sec_stock = perf[["종목명", "섹터"]].drop_duplicates("종목명")
+    port_latest_yr = port[port["기준일"] == int(port["기준일"].max())].copy()
+    port_sec = port_latest_yr.merge(sec_stock, on="종목명", how="left").dropna(subset=["섹터"])
+    sec_summary = (
+        port_sec.groupby("섹터")
+        .agg(종목수=("종목명", "count"), 평균지분율=("지분율(퍼센트)", "mean"), 총평가액=("평가액(억 원)", "sum"))
+        .reset_index()
+        .sort_values("총평가액", ascending=False)
+    )
+
+    fig_sec = make_subplots(specs=[[{"secondary_y": True}]])
+    fig_sec.add_trace(go.Bar(
+        x=sec_summary["섹터"], y=sec_summary["종목수"],
+        name="보유 종목 수", marker_color=BUY, opacity=0.75,
+        text=sec_summary["종목수"], textposition="outside",
+    ), secondary_y=False)
+    fig_sec.add_trace(go.Scatter(
+        x=sec_summary["섹터"], y=sec_summary["평균지분율"].round(2),
+        name="평균 지분율 (%)", mode="lines+markers+text",
+        text=sec_summary["평균지분율"].round(1).astype(str) + "%",
+        textposition="top center",
+        line=dict(color=GOLD, width=2.5), marker=dict(size=9),
+    ), secondary_y=True)
+    fig_sec.update_layout(
+        height=400, margin=dict(l=10, r=10, t=10, b=10),
+        plot_bgcolor="white", legend=dict(orientation="h", y=1.1),
+    )
+    fig_sec.update_yaxes(title_text="보유 종목 수", secondary_y=False)
+    fig_sec.update_yaxes(title_text="평균 지분율 (%)", secondary_y=True)
+    st.plotly_chart(fig_sec, use_container_width=True)
+    tip("🔵 파란 막대: 해당 섹터 내 국민연금 보유 종목 수 (총평가액 순 정렬) | 🟡 노란 선: 섹터 내 종목별 평균 지분율(%). 막대가 높으면 분산 투자, 선이 높으면 집중 투자한 섹터입니다.")
+
+    # ── 섹터 상세 테이블 ────────────────────────────────────
+    with st.expander("📋 섹터별 상세 보기 (종목 리스트)"):
+        sel_sector = st.selectbox("섹터 선택", sec_summary["섹터"].tolist(), key="sector_detail")
+        detail_df = (
+            port_sec[port_sec["섹터"] == sel_sector][["종목명", "평가액(억 원)", "지분율(퍼센트)", "자산군 내 비중(퍼센트)"]]
+            .sort_values("지분율(퍼센트)", ascending=False)
+            .reset_index(drop=True)
+        )
+        detail_df.index += 1
+        st.dataframe(
+            detail_df.style.background_gradient(subset=["지분율(퍼센트)"], cmap="Blues")
+                           .format({"평가액(억 원)": "{:,.0f}", "지분율(퍼센트)": "{:.2f}%", "자산군 내 비중(퍼센트)": "{:.2f}%"}),
+            use_container_width=True,
+        )
+
     # ── 섹션 1 결론 ────────────────────────────────────────
     best_sector = sector_df["360일"].idxmax()
     best_sec_val = sector_df.loc[best_sector, "360일"]
